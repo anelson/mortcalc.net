@@ -1,0 +1,164 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+
+using MortCalc.Lib.Common;
+
+namespace MortCalc.Lib.AmortizedLoans
+{
+    /// <summary>
+    /// Represents any loan which is amortized over time into equal payments
+    /// </summary>
+    public class AmortizedLoan
+    {
+        /// <summary>
+        /// The amount borrowed
+        /// </summary>
+        public decimal Principal { get; set; }
+
+        /// <summary>
+        /// The rate of interest, compounded once each payment period.  APR or annual interest rates must be converted
+        /// </summary>
+        public decimal InterestRate { get; set; }
+
+        /// <summary>
+        /// The optional additional amount added to every payment to pay off the principal faster  
+        /// </summary>
+        public decimal AdditionalPayment { get; set;  }
+
+        /// <summary>
+        /// The total number of payments over which the loan will be paid off
+        /// </summary>
+        public int NumPayments { get; set; }
+
+        /// <summary>
+        /// Computes the amortization schedule for this loan
+        /// </summary>
+        /// <returns></returns>
+        public List<Payment> Amortize(Currency currency)
+        {
+            return Amortize(currency, (IEnumerable<AdditionalPayment>)null);
+        }
+
+        /// <summary>
+        /// Computes the amortization schedule for this loan, taking into account one or more additional payments.
+        /// For 1-based payment number n, the value in additionalPayments at index n-1 is added to the AdditionalPayment,
+        /// and the amortization schedule is computed taking this into account.
+        /// 
+        /// </summary>
+        /// <returns></returns>
+        public List<Payment> Amortize(Currency currency, AdditionalPayment[] additionalPayments)
+        {
+            var additionalPaymentsList = new List<AdditionalPayment>(additionalPayments);
+
+            return Amortize(currency, additionalPaymentsList);
+        }
+
+        /// <summary>
+        /// Computes the amortization schedule for this loan, taking into account one or more additional payments.
+        /// For 1-based payment number n, the AdditionalPayment object in additionalPayments with Ordinal == n 
+        /// is added to the AdditionalPayment member of that payment, and the amortization schedule is computed taking this into account.
+        /// 
+        /// </summary>
+        /// <returns></returns>
+        public List<Payment> Amortize(Currency currency, IEnumerable<AdditionalPayment> additionalPayments)
+        {
+            var periodPaymentAmount = currency.Round(ComputePeriodicPayment());
+            var payments = new List<Payment>();
+
+            var remainingPrincipal = Principal;
+            for (var idx = 1; idx <= NumPayments; idx++)
+            {
+                var interest = currency.Round(remainingPrincipal * InterestRate);
+                var principal = periodPaymentAmount - interest;
+                var additionalPayment = AdditionalPayment;
+
+                //Add the payment-specific additional payment if one was specified
+                if (additionalPayments != null)
+                {
+                    var extraPayment = (additionalPayments.Where(x => x.Ordinal == idx)).SingleOrDefault();
+                    if (extraPayment != null)
+                    {
+                        additionalPayment += extraPayment.Amount;
+                    }
+                }
+
+                if (idx < NumPayments)
+                {
+                    //This is not the last payment.  Subtract the princiapl and any additional payment amount, unless
+                    //that's more than the remaining principal
+                    if (remainingPrincipal > principal)
+                    {
+                        remainingPrincipal -= principal;
+                    }
+                    else
+                    {
+                        principal = remainingPrincipal;
+                        remainingPrincipal = 0;
+                    }
+
+                    if (remainingPrincipal > additionalPayment)
+                    {
+                        remainingPrincipal -= additionalPayment;
+                    }
+                    else
+                    {
+                        additionalPayment = remainingPrincipal;
+                        remainingPrincipal = 0;
+                    }
+                }
+                else
+                {
+                    //This is the last payment, so it must include all remaining principal
+                    principal = remainingPrincipal;
+                    remainingPrincipal = 0;
+
+                    //No additional payment is possible on the last payment, since all the remaining principal is due at the point
+                    additionalPayment = 0;
+                }
+
+                payments.Add(
+                    new Payment()
+                    {
+                        Ordinal = idx,
+                        Principal = principal,
+                        Interest = interest,
+                        AdditionalPayment = additionalPayment,
+                        OutstandingPrincipal = remainingPrincipal
+                    }
+                    );
+
+                if (remainingPrincipal == 0)
+                {
+                    //All paid off, so even if this wasn't the last of the expected payments, 
+                    //the loan is no longer outstanding
+                    break;
+                }
+            }
+
+            return payments;
+        }
+
+        private decimal ComputePeriodicPayment()
+        {
+            if (NumPayments < 1)
+            {
+                throw new ArgumentException("The number of payments specified is not valid");
+            }
+
+            //Per http://en.wikipedia.org/wiki/Amortization_schedule, the math to compute
+            //the periodic payment is pretty straightforward
+
+
+            //P * i
+            var Pi = Principal * InterestRate;
+
+            //1 - (1 + i)^-n
+            //Go go gadget extension methods!
+            decimal denom = 1m - (1m + InterestRate).ToThePowerOf(-NumPayments);
+
+            return Pi / denom;
+        }
+    }
+}

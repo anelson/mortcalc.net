@@ -1,0 +1,31 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+    
+namespace MortCalc.Lib.AmortizedLoans
+{
+    /// <summary>
+    /// Contains extension method for decimal exponentiation
+    /// </summary>
+    static class DecimalPow
+    {
+        /// <summary>
+        /// Extension method on decimal type which implements decimal exponentiation
+        /// </summary>
+        /// <param name="x"></param>
+        /// <param name="y"></param>
+        /// <returns></returns>
+        public static decimal ToThePowerOf(this decimal x, decimal y)
+        {
+            //ARGH!  Why is it such a pain in the ass to do this?  I have to resort to floating point
+            //values and the associated loss of precision.  Damn you limited BCL decimal support!
+            double dx = (double) x;
+            double dy = (double) y;
+
+            double pow = Math.Pow(dx, dy);
+
+            return Convert.ToDecimal(pow);
+        }
+    }
+}
