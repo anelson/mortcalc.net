@@ -33,6 +33,14 @@ namespace MortCalc.Lib.AmortizedLoans
         public int NumPayments { get; set; }
 
         /// <summary>
+        /// The number of payments between compounding interest.  For a simple loan with monthly payments and monthly compounding,
+        /// this would be 1.  For a loan with monthly payments and annual compounding, this is 12.
+        /// 
+        /// For a particularly insidious loan with monthly compounding and annual payments, this would be 1/12.
+        /// </summary>
+        public decimal PaymentsPerCompounding { get; set; }
+
+        /// <summary>
         /// Computes the amortization schedule for this loan
         /// </summary>
         /// <returns></returns>

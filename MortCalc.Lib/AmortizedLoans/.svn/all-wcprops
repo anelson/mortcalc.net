@@ -1,0 +1,29 @@
+K 25
+svn:wc:ra_dav:version-url
+V 73
+/svn/!svn/ver/197/projects/mortcalc.net/trunk/MortCalc.Lib/AmortizedLoans
+END
+Payment.cs
+K 25
+svn:wc:ra_dav:version-url
+V 84
+/svn/!svn/ver/197/projects/mortcalc.net/trunk/MortCalc.Lib/AmortizedLoans/Payment.cs
+END
+DecimalPow.cs
+K 25
+svn:wc:ra_dav:version-url
+V 87
+/svn/!svn/ver/197/projects/mortcalc.net/trunk/MortCalc.Lib/AmortizedLoans/DecimalPow.cs
+END
+AdditionalPayment.cs
+K 25
+svn:wc:ra_dav:version-url
+V 94
+/svn/!svn/ver/197/projects/mortcalc.net/trunk/MortCalc.Lib/AmortizedLoans/AdditionalPayment.cs
+END
+AmortizedLoan.cs
+K 25
+svn:wc:ra_dav:version-url
+V 90
+/svn/!svn/ver/197/projects/mortcalc.net/trunk/MortCalc.Lib/AmortizedLoans/AmortizedLoan.cs
+END

@@ -308,6 +308,43 @@ namespace MortCalc.Lib.Tests.AmortizedLoans
             VerifyPayments(expectedPayments, payments, Currency.UsDollars, 0.01m);
         }
 
+        [Test]
+        public void AmortizeTwelvePaymentWithCompundingEveryOtherPaymentLoanTest()
+        {
+            //Amortize a loan with a 12 payments with compounding every other payment
+            //Test data computed by '10 Payment Loan With Compounding Every Other Payment.xlsx'
+            var loan = new AmortizedLoan
+            {
+                NumPayments = 12,
+                Principal = 100,
+                InterestRate = 0.10m,
+                PaymentsPerCompounding = 2
+            };
+
+            List<Payment> payments = loan.Amortize(Currency.UsDollars);
+
+            List<Payment> expectedPayments = CreateLoanPayments(
+                new[]
+                    {
+                        new[] {1m, 7.96m, 0.83m, 0m, 92.04m},
+                        new[] {2m, 8.03m, 0.76m, 0m, 84.01m},
+                        new[] {3m, 8.09m, 0.7m, 0m, 75.92m},
+                        new[] {4m, 8.16m, 0.63m, 0m, 67.76m},
+                        new[] {5m, 8.23m, 0.56m, 0m, 59.53m},
+                        new[] {6m, 8.3m, 0.49m, 0m, 51.23m},
+                        new[] {7m, 8.36m, 0.43m, 0m, 42.87m},
+                        new[] {8m, 8.43m, 0.36m, 0m, 34.44m},
+                        new[] {9m, 8.5m, 0.29m, 0m, 25.94m},
+                        new[] {10m, 8.57m, 0.22m, 0m, 17.37m},
+                        new[] {11m, 8.65m, 0.14m, 0m, 8.72m},
+                        new[] {12m, 8.72m, 0.07m, 0m, 04m},
+                    }
+                );
+
+            DumpPayments(payments);
+            VerifyPayments(expectedPayments, payments, Currency.UsDollars, 0.01m);
+        }
+
         private static void AmortizeSimpleThirtyPaymentLoanTestInternal(Currency currency,
                                                                  List<Payment> expectedPayments,
                                                                  decimal acceptableError)

@@ -1,0 +1,478 @@
+﻿using System;
+using System.Collections.Generic;
+using MortCalc.Lib.AmortizedLoans;
+using MortCalc.Lib.Common;
+using NUnit.Framework;
+
+namespace MortCalc.Lib.Tests.AmortizedLoans
+{
+    /// <summary>
+    /// Summary description for AmortizedLoanTests
+    /// </summary>
+    [TestFixture]
+    public class AmortizedLoanTests
+    {
+
+        private static void DumpPayments(List<Payment> payments)
+        {
+            payments.ForEach(
+                pmt => Console.WriteLine("#{0}  Payment: {1}  Principal: {2}  Interest: {3}  AdditionalPayment: {4}  OutstandingBalance: {5}",
+                                         pmt.Ordinal,
+                                         pmt.TotalPayment,
+                                         pmt.Principal,
+                                         pmt.Interest,
+                                         pmt.AdditionalPayment,
+                                         pmt.OutstandingPrincipal));
+        }
+
+        /// <summary>
+        /// Compares expected and actual loan payments and asserts on any mismatch
+        /// </summary>
+        private static void VerifyPayments(List<Payment> expectedPayments,
+                                           List<Payment> payments, Currency currency,
+                                           decimal acceptableError)
+        {
+            Assert.AreEqual(expectedPayments.Count, payments.Count);
+            for (int idx = 0; idx < expectedPayments.Count; idx++)
+            {
+                AssertMostlyEqual(acceptableError, expectedPayments[idx].Ordinal, payments[idx].Ordinal,
+                                  "Ordinal number for payment {0} doesn't match", idx + 1);
+                AssertMostlyEqual(acceptableError, expectedPayments[idx].Principal, payments[idx].Principal,
+                                  "Principal for payment {0} doesn't match", idx + 1);
+                AssertMostlyEqual(acceptableError, expectedPayments[idx].Interest, payments[idx].Interest,
+                                  "Interest for payment {0} doesn't match", idx + 1);
+                AssertMostlyEqual(acceptableError, expectedPayments[idx].AdditionalPayment, payments[idx].AdditionalPayment,
+                                  "AdditionalPayment for payment {0} doesn't match", idx + 1);
+                AssertMostlyEqual(acceptableError, expectedPayments[idx].OutstandingPrincipal,
+                                  payments[idx].OutstandingPrincipal,
+                                  "OutstandingPrincipal for payment {0} doesn't match", idx + 1);
+                AssertMostlyEqual(acceptableError, expectedPayments[idx].TotalPayment, payments[idx].TotalPayment,
+                                  "TotalPayment for payment {0} doesn't match", idx + 1);
+
+                Assert.AreEqual(payments[idx].Principal +
+                    payments[idx].Interest +
+                    payments[idx].AdditionalPayment,
+                    payments[idx].TotalPayment,
+                    "TotalPayment for payment {0} doesn't match",
+                    idx+1);
+            }
+
+            //All the payments should be the same, allowing for
+            //slight differences due to rounding
+            for (int idx = 1; idx < payments.Count; idx++)
+            {
+                //If this is a currency that does rounding, skip comparison of the final payment
+                //as it's where the accumulated errors are corrected
+                if (idx + 1 == payments.Count && currency == Currency.UsDollars)
+                {
+                    continue;
+                }
+
+                //If the payment includes an additional payment, obviously it won't match either
+                if (payments[idx].AdditionalPayment != 0)
+                {
+                    continue;
+                }
+
+                AssertMostlyEqual(acceptableError, payments[0].TotalPayment,
+                                  payments[idx].TotalPayment,
+                                  "TotalPayment for payment {0} doesn't match the first payment",
+                                  idx + 1);
+            }
+        }
+
+        /// <summary>
+        /// Creates an array of Payment objects given a two-dimensional array of values.
+        /// Used to concisely represent test data in the tests
+        /// </summary>
+        /// <param name="data"></param>
+        /// <returns></returns>
+        private static List<Payment> CreateLoanPayments(decimal[][] data)
+        {
+            var payments = new List<Payment>();
+            for (int idx = 0; idx < data.Length; idx++)
+            {
+                if (data[idx].Length == 4)
+                {
+                    payments.Add(new Payment
+                                     {
+                                         Ordinal = (int) data[idx][0],
+                                         Principal = data[idx][1],
+                                         Interest = data[idx][2],
+                                         OutstandingPrincipal = data[idx][3]
+                                     });
+                } else if (data[idx].Length == 5)
+                {
+                    payments.Add(new Payment
+                                     {
+                                         Ordinal = (int) data[idx][0],
+                                         Principal = data[idx][1],
+                                         Interest = data[idx][2],
+                                         AdditionalPayment = data[idx][3],
+                                         OutstandingPrincipal = data[idx][4]
+                                     });
+                } else
+                {
+                    Assert.Fail("Data is not the right size");
+                }
+            }
+
+            return payments;
+        }
+
+        /// <summary>
+        /// Asserts two decimal values are 'mostly' equal, allowing for slight differences due to rounding
+        /// </summary>
+        private static void AssertMostlyEqual(decimal acceptableError, decimal expected, decimal actual, String msg,
+                                              params object[] args)
+        {
+            decimal diff = Math.Abs(expected - actual);
+            if (diff > acceptableError)
+            {
+                //They differ by too much, so assert
+                Assert.AreEqual(expected, actual, msg, args);
+            }
+        }
+
+        [Test]
+        [ExpectedException(typeof (ArgumentException))]
+        public void AmortizeEmptyLoanTest()
+        {
+            var loan = new AmortizedLoan();
+            loan.Amortize(Currency.UsDollars);
+        }
+
+        [Test]
+        public void AmortizeSinglePaymentLoanTest()
+        {
+            //Amortize a loan with a single payment
+            //Test data computed by 'Single Payment Loan.xlsx'
+            var loan = new AmortizedLoan
+            {
+                NumPayments = 1,
+                Principal = 100,
+                InterestRate = 0.10m
+            };
+
+            List<Payment> payments = loan.Amortize(Currency.UsDollars);
+            Assert.AreEqual(1, payments.Count);
+            Assert.AreEqual(1, payments[0].Ordinal);
+            Assert.AreEqual(100, payments[0].Principal);
+            Assert.AreEqual(10, payments[0].Interest);
+            Assert.AreEqual(0, payments[0].OutstandingPrincipal);
+        }
+
+        [Test]
+        public void AmortizeSinglePaymentWithAdditionalPaymentLoanTest()
+        {
+            //Amortize a loan with a single payment that includes an additional payment amount
+            //Test data computed by 'Single Payment Loan.xlsx'
+            var loan = new AmortizedLoan
+            {
+                NumPayments = 1,
+                Principal = 100,
+                InterestRate = 0.10m,
+                AdditionalPayment = 20m
+            };
+
+            //Since there's only the one payment which covers the debt in full, the additional payment
+            //is not applied
+            List<Payment> payments = loan.Amortize(Currency.UsDollars);
+            Assert.AreEqual(1, payments.Count);
+            Assert.AreEqual(1, payments[0].Ordinal);
+            Assert.AreEqual(100, payments[0].Principal);
+            Assert.AreEqual(10, payments[0].Interest);
+            Assert.AreEqual(0, payments[0].AdditionalPayment);
+            Assert.AreEqual(0m, payments[0].OutstandingPrincipal);
+        }
+
+        [Test]
+        public void AmortizeSimpleThreePaymentLoanTest()
+        {
+            //Amortize a loan with a 3 payments
+            //Test data computed by 'Simple 3 Payment Loan.xlsx'
+            var loan = new AmortizedLoan
+                           {
+                               NumPayments = 3,
+                               Principal = 100,
+                               InterestRate = 0.10m
+                           };
+
+            List<Payment> payments = loan.Amortize(Currency.UsDollars);
+
+            List<Payment> expectedPayments = CreateLoanPayments(
+                new[]
+                    {
+                        new[] {1, 30.21m, 10.0m, 69.79m},
+                        new[] {2, 33.23m, 6.98m, 36.56m},
+                        new[] {3, 36.56m, 3.66m, 0.0m},
+                    }
+                );
+
+            VerifyPayments(expectedPayments, payments, Currency.UsDollars, 0.01m);
+        }
+
+        [Test]
+        public void AmortizeSimpleThreePaymentWithAdditionalPaymentLoanTest()
+        {
+            //Amortize a loan with a 3 payments
+            //Test data computed by 'Simple 3 Payment Loan With Additional Payment.xlsx'
+            var loan = new AmortizedLoan
+            {
+                NumPayments = 3,
+                Principal = 100,
+                InterestRate = 0.10m,
+                AdditionalPayment = 5
+            };
+
+            List<Payment> payments = loan.Amortize(Currency.UsDollars);
+
+            List<Payment> expectedPayments = CreateLoanPayments(
+                new[]
+                    {
+                        new[] {1m, 30.21m, 10.0m, 5m, 64.79m},
+                        new[] {2m, 33.73m, 6.48m, 5m, 26.06m},
+                        new[] {3m, 26.06m, 2.61m, 0m, 0.0m},
+                    }
+                );
+
+            DumpPayments(payments);
+            VerifyPayments(expectedPayments, payments, Currency.UsDollars, 0.01m);
+        }
+
+        [Test]
+        public void AmortizeSimpleThreePaymentWithHugeAdditionalPaymentLoanTest()
+        {
+            //Amortize a loan with a 3 payments and an additional payment so large the third
+            //payment isn't necessary
+            //Test data computed by '3 Payment Loan With huge Additional Payment.xlsx'
+            var loan = new AmortizedLoan
+            {
+                NumPayments = 3,
+                Principal = 100,
+                InterestRate = 0.10m,
+                AdditionalPayment = 50
+            };
+
+            List<Payment> payments = loan.Amortize(Currency.UsDollars);
+
+            List<Payment> expectedPayments = CreateLoanPayments(
+                new[]
+                    {
+                        new[] {1m, 30.21m, 10.0m, 50m, 19.79m},
+                        new[] {2m, 19.79m, 1.98m, 0m, 0m}
+                    }
+                );
+
+            DumpPayments(payments);
+            VerifyPayments(expectedPayments, payments, Currency.UsDollars, 0.01m);
+        }
+
+        [Test]
+        public void AmortizeTenPaymentWithIrregularAdditionalPaymentLoanTest()
+        {
+            //Amortize a loan with a 10 payments but sprinkle in some irregular additional
+            //payments
+            //Test data computed by '10 Payment Loan With Irregular Additional Payment.xlsx'
+            var loan = new AmortizedLoan
+            {
+                NumPayments = 10,
+                Principal = 100,
+                InterestRate = 0.10m
+            };
+
+            var additionalPayments = new[]
+                                         {
+                                             new AdditionalPayment() { Ordinal = 3, Amount = 10},
+                                             new AdditionalPayment() { Ordinal = 5, Amount = 1},
+                                             new AdditionalPayment() { Ordinal = 6, Amount = 10}
+                                         };
+
+            List<Payment> payments = loan.Amortize(Currency.UsDollars, additionalPayments);
+
+            List<Payment> expectedPayments = CreateLoanPayments(
+                new[]
+                    {
+                        new[] {1m, 6.27m, 10.0m, 0m, 93.73m},
+                        new[] {2m, 6.90m, 9.37m, 0m, 86.83m},
+                        new[] {3m, 7.59m, 8.68m, 10m, 69.24m},
+                        new[] {4m, 9.35m, 6.92m, 0m, 59.89m},
+                        new[] {5m, 10.28m, 5.99m, 1m, 48.61m},
+                        new[] {6m, 11.41m, 4.86m, 10m, 27.20m},
+                        new[] {7m, 13.55m, 2.72m, 0m, 13.65m},
+                        new[] {8m, 13.65m, 1.37m, 0m, 0m}
+                    }
+                );
+
+            DumpPayments(payments);
+            VerifyPayments(expectedPayments, payments, Currency.UsDollars, 0.01m);
+        }
+
+        private static void AmortizeSimpleThirtyPaymentLoanTestInternal(Currency currency,
+                                                                 List<Payment> expectedPayments,
+                                                                 decimal acceptableError)
+        {
+            var loan = new AmortizedLoan
+            {
+                NumPayments = 30,
+                Principal = 100,
+                InterestRate = 0.10m
+            };
+
+            List<Payment> payments = loan.Amortize(currency);
+            DumpPayments(payments);
+            VerifyPayments(expectedPayments, payments, currency, acceptableError);
+        }
+
+        [Test]
+        public void AmortizeSimpleThirtyPaymentLoanNoRoundingTest()
+        {
+            //Amortize a loan with a 30 payments
+            //Test data computed by 'Simple 30 Payment Loan No Rounding.xlsx'
+            //
+            //This uses a Currency instance that does not perform any rounding, just as the test data
+            //from the spreadsheet does not round.  Note that due to truncation of the values from the
+            //Excel speadsheet a fuzzy +/- 0.01 standard must still be employed to pass the tests, but
+            //we're still assured there are no rapidly accumulating rounding errors
+
+            List<Payment> expectedPayments = CreateLoanPayments(
+                new[]
+                    {
+                        new[] {1m, 0.61m, 10.00m, 99.39m},
+                        new[] {2m, 0.67m, 9.94m, 98.72m},
+                        new[] {3m, 0.74m, 9.87m, 97.99m},
+                        new[] {4m, 0.81m, 9.80m, 97.18m},
+                        new[] {5m, 0.89m, 9.72m, 96.29m},
+                        new[] {6m, 0.98m, 9.63m, 95.31m},
+                        new[] {7m, 1.08m, 9.53m, 94.23m},
+                        new[] {8m, 1.18m, 9.42m, 93.05m},
+                        new[] {9m, 1.30m, 9.30m, 91.74m},
+                        new[] {10m, 1.43m, 9.17m, 90.31m},
+                        new[] {11m, 1.58m, 9.03m, 88.73m},
+                        new[] {12m, 1.73m, 8.87m, 87.00m},
+                        new[] {13m, 1.91m, 8.70m, 85.09m},
+                        new[] {14m, 2.10m, 8.51m, 82.99m},
+                        new[] {15m, 2.31m, 8.30m, 80.68m},
+                        new[] {16m, 2.54m, 8.07m, 78.15m},
+                        new[] {17m, 2.79m, 7.81m, 75.35m},
+                        new[] {18m, 3.07m, 7.54m, 72.28m},
+                        new[] {19m, 3.38m, 7.23m, 68.90m},
+                        new[] {20m, 3.72m, 6.89m, 65.18m},
+                        new[] {21m, 4.09m, 6.52m, 61.09m},
+                        new[] {22m, 4.50m, 6.11m, 56.59m},
+                        new[] {23m, 4.95m, 5.66m, 51.64m},
+                        new[] {24m, 5.44m, 5.16m, 46.20m},
+                        new[] {25m, 5.99m, 4.62m, 40.21m},
+                        new[] {26m, 6.59m, 4.02m, 33.63m},
+                        new[] {27m, 7.25m, 3.36m, 26.38m},
+                        new[] {28m, 7.97m, 2.64m, 18.41m},
+                        new[] {29m, 8.77m, 1.84m, 9.64m},
+                        new[] {30m, 9.64m, 0.96m, 0.00m}
+                    }
+                );
+            AmortizeSimpleThirtyPaymentLoanTestInternal(Currency.UsDollarsNoRounding, expectedPayments, 0.01m);
+        }
+
+        [Test]
+        public void AmortizeSimpleThirtyPaymentLoanWithRoundingTest()
+        {
+            //Amortize a loan with a 30 payments
+            //Test data computed by 'Simple 30 Payment Loan.xlsx'
+            //
+            //This uses a Currency instance that does round.  Unfortunately, since the amortization
+            //implementation is in terms of decimal, it will never precisely match results generated by
+            //IEEE 754 floating point-based implementations like Excel due to floating point errors.
+            //
+            //An example of this error is thus:
+            //
+            // Math.Round(8.505m, 2) = 8.50
+            // Math.Round(8.505, 2) = 8.51
+            //
+            // It only takes one of these and errors start creeping in.
+            //
+            // To compensate, I've taken the results from Excel and compare them with a wider error margin
+            // This is far from ideal, but it's closer to it than nothing.
+            List<Payment> expectedPayments = CreateLoanPayments(
+                new[]
+                    {
+                        new[] {1m, 0.61m, 10.00m, 99.39m},
+                        new[] {2m, 0.67m, 9.94m, 98.72m},
+                        new[] {3m, 0.74m, 9.87m, 97.98m},
+                        new[] {4m, 0.81m, 9.80m, 97.17m},
+                        new[] {5m, 0.89m, 9.72m, 96.28m},
+                        new[] {6m, 0.98m, 9.63m, 95.30m},
+                        new[] {7m, 1.08m, 9.53m, 94.22m},
+                        new[] {8m, 1.19m, 9.42m, 93.03m},
+                        new[] {9m, 1.31m, 9.30m, 91.72m},
+                        new[] {10m, 1.44m, 9.17m, 90.28m},
+                        new[] {11m, 1.58m, 9.03m, 88.70m},
+                        new[] {12m, 1.74m, 8.87m, 86.96m},
+                        new[] {13m, 1.91m, 8.70m, 85.05m},
+                        new[] {14m, 2.10m, 8.51m, 82.95m},
+                        new[] {15m, 2.31m, 8.30m, 80.64m},
+                        new[] {16m, 2.55m, 8.06m, 78.09m},
+                        new[] {17m, 2.80m, 7.81m, 75.29m},
+                        new[] {18m, 3.08m, 7.53m, 72.21m},
+                        new[] {19m, 3.39m, 7.22m, 68.82m},
+                        new[] {20m, 3.73m, 6.88m, 65.09m},
+                        new[] {21m, 4.10m, 6.51m, 60.99m},
+                        new[] {22m, 4.51m, 6.10m, 56.48m},
+                        new[] {23m, 4.96m, 5.65m, 51.52m},
+                        new[] {24m, 5.46m, 5.15m, 46.06m},
+                        new[] {25m, 6.00m, 4.61m, 40.06m},
+                        new[] {26m, 6.60m, 4.01m, 33.46m},
+                        new[] {27m, 7.26m, 3.35m, 26.20m},
+                        new[] {28m, 7.99m, 2.62m, 18.21m},
+                        new[] {29m, 8.79m, 1.82m, 9.42m},
+                        new[] {30m, 9.42m, 0.94m, 0.00m}
+                    }
+                );
+            AmortizeSimpleThirtyPaymentLoanTestInternal(Currency.UsDollars, expectedPayments, 0.05m);
+        }
+
+        [Test]
+        public void AmortizeThirtyPaymentLoanWithAdditionalPaymentsTest()
+        {
+            //Amortize a loan with a 30 payments plus additional payments which result in the principal being paid off in 21 payments
+            //Test data computed by '30 Payment LoanWith Additional Payments.xlsx'
+            List<Payment> expectedPayments = CreateLoanPayments(
+                new[]
+                    {
+                        new[] {1m, 0.61m, 10.00m, 1.00m, 98.39m},
+                        new[] {2m, 0.77m, 9.84m, 1.00m, 96.62m},
+                        new[] {3m, 0.95m, 9.66m, 1.00m, 94.67m},
+                        new[] {4m, 1.14m, 9.47m, 1.00m, 92.53m},
+                        new[] {5m, 1.36m, 9.25m, 1.00m, 90.17m},
+                        new[] {6m, 1.59m, 9.02m, 1.00m, 87.58m},
+                        new[] {7m, 1.85m, 8.76m, 1.00m, 84.73m},
+                        new[] {8m, 2.14m, 8.47m, 1.00m, 81.59m},
+                        new[] {9m, 2.45m, 8.16m, 1.00m, 78.14m},
+                        new[] {10m, 2.80m, 7.81m, 1.00m, 74.34m},
+                        new[] {11m, 3.18m, 7.43m, 1.00m, 70.16m},
+                        new[] {12m, 3.59m, 7.02m, 1.00m, 65.57m},
+                        new[] {13m, 4.05m, 6.56m, 1.00m, 60.52m},
+                        new[] {14m, 4.56m, 6.05m, 1.00m, 54.96m},
+                        new[] {15m, 5.11m, 5.50m, 1.00m, 48.85m},
+                        new[] {16m, 5.72m, 4.89m, 1.00m, 42.13m},
+                        new[] {17m, 6.40m, 4.21m, 1.00m, 34.73m},
+                        new[] {18m, 7.14m, 3.47m, 1.00m, 26.59m},
+                        new[] {19m, 7.95m, 2.66m, 1.00m, 17.64m},
+                        new[] {20m, 8.85m, 1.76m, 1.00m, 7.79m},
+                        new[] {21m, 7.79m, 0.78m, 0m, 0.00m}
+                    }
+                );
+
+            var loan = new AmortizedLoan
+                           {
+                               NumPayments = 30,
+                               Principal = 100,
+                               InterestRate = 0.10m,
+                               AdditionalPayment = 1m
+                           };
+
+            List<Payment> payments = loan.Amortize(Currency.UsDollars);
+            DumpPayments(payments);
+            VerifyPayments(expectedPayments, payments, Currency.UsDollars, 0.01m);
+        }
+    }
+}
